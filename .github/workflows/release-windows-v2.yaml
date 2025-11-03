@@ -1,4 +1,4 @@
-name: release-windows-v2
+name: release-windows
 
 on:
   workflow_dispatch:
@@ -32,14 +32,12 @@ jobs:
       - name: Install frontend dependencies
         run: npm ci
 
-      # Build & create a GitHub Release (draft) and upload artifacts.
-      # No third-party cloud signing; this just uses GitHub Releases.
-      - name: Build and release with Tauri
+      - name: Build and create Release (unsigned)
         uses: tauri-apps/tauri-action@v0
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
-          tagName: v__VERSION__          # __VERSION__ is auto-replaced by the action
+          tagName: v__VERSION__          # auto-replaced by the action
           releaseName: 'v__VERSION__'
           releaseBody: 'See the assets to download this version and install.'
           releaseDraft: true
