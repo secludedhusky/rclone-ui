@@ -1,4 +1,4 @@
-name: release-windows-v2
+name: release-windows
 
 on:
   workflow_dispatch:
@@ -32,42 +32,57 @@ jobs:
       - name: Install frontend dependencies
         run: npm ci
 
-      # Force-disable any signing in Tauri config (handles JSON and JSON5)
-      - name: Disable Windows signing in Tauri config
+      # Fail fast if signing sneaks back in
+      - name: Verify signing is disabled
         shell: pwsh
         run: |
-          $json = "src-tauri/tauri.conf.json"
-          $json5 = "src-tauri/tauri.conf.json5"
-
-          if (Test-Path $json) {
-            $cfg = Get-Content $json -Raw | ConvertFrom-Json
-            if ($cfg.tauri -and $cfg.tauri.bundle -and $cfg.tauri.bundle.windows) {
-              $win = $cfg.tauri.bundle.windows
-              foreach ($k in @("signCommand","certificatePath","certificatePassword","certificateThumbprint","timestampUrl","tsp")) {
-                if ($win.PSObject.Properties.Name -contains $k) { $win.PSObject.Properties.Remove($k) | Out-Null }
-              }
-              $cfg | ConvertTo-Json -Depth 20 | Set-Content $json -Encoding UTF8
-            }
-          } elseif (Test-Path $json5) {
-            # crude-but-effective line killers for JSON5
-            (Get-Content $json5 -Raw) `
-              -replace '(?m)^\s*["'']signCommand["'']\s*:\s*.*?,\s*$', '' `
-              -replace '(?m)^\s*["'']certificate(Path|Password|Thumbprint)["'']\s*:\s*.*?,\s*$', '' `
-              -replace '(?m)^\s*["'']time(stampUrl|sp)["'']\s*:\s*.*?,\s*$', '' `
-              | Set-Content $json5 -Encoding UTF8
-          } else {
-            Write-Host "No Tauri config found (skipping)"
+          $text = Get-Content src-tauri/tauri.conf.json -Raw
+          if ($text -match '"signCommand"\s*:') {
+            Write-Error 'Found "signCommand" in tauri.conf.json. Remove it to build unsigned.'
+          }
+          if ($text -match '"createUpdaterArtifacts"\s*:\s*true') {
+            Write-Error 'createUpdaterArtifacts is true; set it to false for unsigned builds.'
+          }
+          if ($text -match '"plugins"\s*:\s*\{\s*"updater"') {
+            Write-Error 'plugins.updater is present; remove it for unsigned builds.'
           }
 
-      # Build & create Release (unsigned). No cloud/local code-signing involved.
-      - name: Build and create Release (unsigned)
+      # Read version from tauri.conf.json so we can reuse the tag later
+      - name: Read app version
+        id: meta
+        shell: pwsh
+        run: |
+          $cfg = Get-Content src-tauri/tauri.conf.json -Raw | ConvertFrom-Json
+          $v = $cfg.version
+          "version=$v" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
+
+      # Build and PUBLISH the Release; tauri-action uploads all bundles it finds (NSIS installer, etc.)
+      - name: Build and publish Release (unsigned)
         uses: tauri-apps/tauri-action@v0
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
-          tagName: v__VERSION__          # auto-replaced by tauri-action
-          releaseName: 'v__VERSION__'
+          tagName: v${{ steps.meta.outputs.version }}
+          releaseName: 'v${{ steps.meta.outputs.version }}'
           releaseBody: 'See the assets to download this version and install.'
-          releaseDraft: true
+          releaseDraft: false          # publish immediately
           prerelease: false
           args: --target x86_64-pc-windows-msvc --verbose
+
+      # Optionally attach the raw .exe (unbundled) to the same Release tag
+      - name: Upload raw .exe to Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: v${{ steps.meta.outputs.version }}
+          files: |
+            src-tauri/target/x86_64-pc-windows-msvc/release/Rclone UI.exe
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      # (Optional) Show what got built
+      - name: List built files
+        shell: pwsh
+        run: |
+          $out = "$env:GITHUB_WORKSPACE\src-tauri\target\x86_64-pc-windows-msvc\release"
+          Write-Host "Release dir: $out"
+          Get-ChildItem -Recurse -File $out | Select-Object FullName, Length | Format-Table -AutoSize
