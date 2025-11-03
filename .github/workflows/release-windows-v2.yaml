@@ -1,4 +1,4 @@
-name: release-windows
+name: release-windows-v2
 
 on:
   workflow_dispatch:
