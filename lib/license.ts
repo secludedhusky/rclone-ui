@@ -1,6 +1,4 @@
-import { invoke } from '@tauri-apps/api/core'
-import { fetch } from '@tauri-apps/plugin-http'
-import { platform } from '@tauri-apps/plugin-os'
+// 'invoke', 'fetch', and 'platform' imports removed. They are no longer needed.
 import { usePersistedStore } from './store'
 
 export async function validateLicense(licenseKey: string) {
@@ -12,13 +10,11 @@ export async function validateLicense(licenseKey: string) {
     console.log('[validateLicense] license validated (locally)')
 }
 
-export async function revokeMachineLicense(licenseKey: string) {
+// We prefix 'licenseKey' with '_' to tell TypeScript we
+// are intentionally not using this parameter.
+export async function revokeMachineLicense(_licenseKey: string) {
     console.log('[revokeMachineLicense] patch active, skipping remote revocation...')
     
     // Do nothing. We are not revoking our key.
-    // The store's state remains { licenseValid: true }.
     console.log('[revokeMachineLicense] revocation skipped by patch.')
-
-    // We could even throw an error here to make the UI think it
-    // failed, but simply doing nothing is cleaner.
 }
