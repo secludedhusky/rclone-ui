@@ -32,12 +32,40 @@ jobs:
       - name: Install frontend dependencies
         run: npm ci
 
+      # Force-disable any signing in Tauri config (handles JSON and JSON5)
+      - name: Disable Windows signing in Tauri config
+        shell: pwsh
+        run: |
+          $json = "src-tauri/tauri.conf.json"
+          $json5 = "src-tauri/tauri.conf.json5"
+
+          if (Test-Path $json) {
+            $cfg = Get-Content $json -Raw | ConvertFrom-Json
+            if ($cfg.tauri -and $cfg.tauri.bundle -and $cfg.tauri.bundle.windows) {
+              $win = $cfg.tauri.bundle.windows
+              foreach ($k in @("signCommand","certificatePath","certificatePassword","certificateThumbprint","timestampUrl","tsp")) {
+                if ($win.PSObject.Properties.Name -contains $k) { $win.PSObject.Properties.Remove($k) | Out-Null }
+              }
+              $cfg | ConvertTo-Json -Depth 20 | Set-Content $json -Encoding UTF8
+            }
+          } elseif (Test-Path $json5) {
+            # crude-but-effective line killers for JSON5
+            (Get-Content $json5 -Raw) `
+              -replace '(?m)^\s*["'']signCommand["'']\s*:\s*.*?,\s*$', '' `
+              -replace '(?m)^\s*["'']certificate(Path|Password|Thumbprint)["'']\s*:\s*.*?,\s*$', '' `
+              -replace '(?m)^\s*["'']time(stampUrl|sp)["'']\s*:\s*.*?,\s*$', '' `
+              | Set-Content $json5 -Encoding UTF8
+          } else {
+            Write-Host "No Tauri config found (skipping)"
+          }
+
+      # Build & create Release (unsigned). No cloud/local code-signing involved.
       - name: Build and create Release (unsigned)
         uses: tauri-apps/tauri-action@v0
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
-          tagName: v__VERSION__          # auto-replaced by the action
+          tagName: v__VERSION__          # auto-replaced by tauri-action
           releaseName: 'v__VERSION__'
           releaseBody: 'See the assets to download this version and install.'
           releaseDraft: true
